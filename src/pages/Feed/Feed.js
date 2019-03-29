@@ -1,4 +1,5 @@
 import React, { Component, Fragment } from 'react'
+import openSocket from 'socket.io-client'
 
 import Post from '../../components/Feed/Post/Post'
 import Button from '../../components/Button/Button'
@@ -22,7 +23,11 @@ class Feed extends Component {
 	}
 
 	componentDidMount() {
-		fetch('URL')
+		fetch('http://localhost:3030/feed/user', {
+			headers: {
+				authorization: this.props.token
+			}
+		})
 			.then(res => {
 				if (res.status !== 200) {
 					throw new Error('Failed to fetch user status.')
@@ -35,6 +40,52 @@ class Feed extends Component {
 			.catch(this.catchError)
 
 		this.loadPosts()
+
+		// WebSocket Operations
+		const socket = openSocket('http://localhost:3030')
+
+		socket.on('post', data => {
+			switch (data.action) {
+				case 'create':
+					this.addPost(data.post)
+					break
+				case 'update':
+					this.updatePost(data.post)
+					break
+				case 'delete':
+					this.loadPosts()
+					break
+				default:
+					console.log('No Match Action')
+			}
+		})
+	}
+
+	addPost = post => {
+		this.setState(prev => {
+			const updatedPosts = [...prev.posts]
+			if (prev.postPage === 1) {
+				updatedPosts.pop()
+				updatedPosts.unshift(post)
+			}
+			return {
+				posts: updatedPosts,
+				totalPosts: prev.totalPosts + 1
+			}
+		})
+	}
+
+	updatePost = post => {
+		this.setState(prevState => {
+			const updatedPosts = [...prevState.posts]
+			const updatedPostIndex = updatedPosts.findIndex(p => p._id === post._id)
+			if (updatedPostIndex > -1) {
+				updatedPosts[updatedPostIndex] = post
+			}
+			return {
+				posts: updatedPosts
+			}
+		})
 	}
 
 	loadPosts = direction => {
@@ -76,7 +127,16 @@ class Feed extends Component {
 
 	statusUpdateHandler = event => {
 		event.preventDefault()
-		fetch('URL')
+		fetch('http://localhost:3030/feed/user', {
+			method: 'PUT',
+			headers: {
+				'content-type': 'application/json',
+				authorization: this.props.token
+			},
+			body: JSON.stringify({
+				userStatus: this.state.status
+			})
+		})
 			.then(res => {
 				if (res.status !== 200 && res.status !== 201) {
 					throw new Error("Can't update status!")
@@ -138,25 +198,9 @@ class Feed extends Component {
 			})
 			.then(resData => {
 				console.log(resData)
-				const post = {
-					_id: resData.post._id,
-					title: resData.post.title,
-					content: resData.post.content,
-					creator: resData.post.creator,
-					createdAt: resData.post.createdAt
-				}
-				this.setState(prevState => {
-					let updatedPosts = [...prevState.posts]
-					if (prevState.editPost) {
-						const postIndex = prevState.posts.findIndex(
-							p => p._id === prevState.editPost._id
-						)
-						updatedPosts[postIndex] = post
-					} else if (prevState.posts.length < 2) {
-						updatedPosts = prevState.posts.concat(post)
-					}
+
+				this.setState(() => {
 					return {
-						posts: updatedPosts,
 						isEditing: false,
 						editPost: null,
 						editLoading: false
@@ -194,10 +238,7 @@ class Feed extends Component {
 			})
 			.then(resData => {
 				console.log(resData)
-				this.setState(prevState => {
-					const updatedPosts = prevState.posts.filter(p => p._id !== postId)
-					return { posts: updatedPosts, postsLoading: false }
-				})
+				this.loadPosts()
 			})
 			.catch(err => {
 				console.log(err)
