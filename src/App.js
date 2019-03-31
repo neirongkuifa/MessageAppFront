@@ -60,36 +60,42 @@ class App extends Component {
 		event.preventDefault()
 		const data = authData
 		this.setState({ authLoading: true })
-		fetch('http://localhost:3030/login', {
+		const query = `{
+			login(email:"${data.email}", password:"${data.password}")
+			{
+				token 
+				userId
+			}
+		}`
+		fetch('http://localhost:3030/graphql', {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json'
 			},
-			body: JSON.stringify({
-				email: data.email,
-				password: data.password
-			})
+			body: JSON.stringify({ query })
 		})
 			.then(res => {
-				if (res.status === 422) {
-					throw new Error('Validation failed.')
-				}
-				if (res.status !== 200 && res.status !== 201) {
-					console.log('Error!')
-					throw new Error('Could not authenticate you!')
-				}
 				return res.json()
 			})
 			.then(resData => {
-				console.log(resData)
+				if (resData.errors && resData.errors[0].code === 422) {
+					throw new Error('Validation failed.')
+				}
+				if (resData.errors) {
+					console.log('Error!')
+					throw new Error('Could not authenticate you!')
+				}
+
+				const data = resData.data.login
+				console.log(data)
 				this.setState({
 					isAuth: true,
-					token: resData.token,
+					token: data.token,
 					authLoading: false,
-					userId: resData.userId
+					userId: data.userId
 				})
-				localStorage.setItem('token', resData.token)
-				localStorage.setItem('userId', resData.userId)
+				localStorage.setItem('token', data.token)
+				localStorage.setItem('userId', data.userId)
 				const remainingMilliseconds = 60 * 60 * 1000
 				const expiryDate = new Date(
 					new Date().getTime() + remainingMilliseconds
@@ -113,31 +119,43 @@ class App extends Component {
 
 		const data = authData.signupForm
 
-		fetch('http://localhost:3030/signup', {
+		const query = `mutation CreateUser($input: userInfo){
+			createUser(input:$input){
+				_id
+				email
+				name
+				status
+			}
+		}`
+
+		fetch('http://localhost:3030/graphql', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify({
-				email: data.email.value,
-				name: data.name.value,
-				password: data.password.value
+				query,
+				variables: {
+					input: {
+						email: data.email.value,
+						name: data.name.value,
+						password: data.password.value
+					}
+				}
 			})
 		})
 			.then(res => {
-				if (res.status === 422) {
+				return res.json()
+			})
+			.then(resData => {
+				if (resData.errors && resData.errors[0].status === 422) {
 					throw new Error(
 						"Validation failed. Make sure the email address isn't used yet!"
 					)
 				}
-				if (res.status !== 200 && res.status !== 201) {
-					console.log('Error!')
-					throw new Error('Creating a user failed!')
+				if (resData.errors) {
+					throw new Error('User Creation Failed')
 				}
-				return res.json()
-			})
-			.then(resData => {
-				console.log(resData)
 				this.setState({ isAuth: false, authLoading: false })
 				this.props.history.replace('/')
 			})
